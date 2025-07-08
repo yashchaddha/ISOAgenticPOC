@@ -56,19 +56,22 @@ class SimpleAuditGraph:
         state = self.sessions[session_id]
         state.current_query = query
         
-        # New system prompt: always return JSON with response and advance_clause
+        # New system prompt: always return JSON with response, advance_clause, and previous_clause
         system_prompt = '''
-You are an expert ISO 27001 internal auditor chatbot. For every user message, you must return a JSON object with two fields:
+You are an expert ISO 27001 internal auditor chatbot. For every user message, you must return a JSON object with three fields:
 - response: your answer to the user's question (string)
 - advance_clause: true if the user wants to move to the next clause, false otherwise (boolean)
+- previous_clause: true if the user wants to move to the previous clause, false otherwise (boolean)
 
-If the user message is a request to move to the next clause (e.g., "next", "skip", "move to next clause", "advance", etc.), set advance_clause to true. Otherwise, set it to false.
+If the user message is a request to move to the next clause (e.g., "next", "skip", "move to next clause", "advance", etc.), set advance_clause to true.
+If the user message is a request to move to the previous clause (e.g., "previous", "back", "go back", "move to previous clause", etc.), set previous_clause to true.
+If neither, set both to false.
 
 At the end of every response, always ask: "Would you like to record your answer for this clause or upload supporting documents?"
 If the user answers 'No' or expresses intent not to record or upload, respond with: "Are you facing any issues or challenges related to this clause? I can help clarify or provide guidance."
 
 Always return a valid JSON object. Example:
-{"response": "Here is my answer... Would you like to record your answer for this clause or upload supporting documents?", "advance_clause": false}
+{"response": "Here is my answer... Would you like to record your answer for this clause or upload supporting documents?", "advance_clause": false, "previous_clause": false}
 '''
         
         user_prompt = f'''
@@ -92,19 +95,27 @@ User Message: {query}
                 result = json.loads(llm_response.content)
                 response_text = result.get('response', llm_response.content)
                 advance_clause = result.get('advance_clause', False)
+                previous_clause = result.get('previous_clause', False)
             except Exception:
                 response_text = llm_response.content
                 advance_clause = False
+                previous_clause = False
         except Exception as e:
             response_text = f"I apologize, but I encountered an error while processing your query. Please try again. Error: {str(e)}"
             advance_clause = False
+            previous_clause = False
         
         # If LLM says to advance, call record_answer with skip
         if advance_clause:
             await self.record_answer(session_id, '__skip__')
             # Update state after advancing
             state = self.sessions[session_id]
-        
+        # If LLM says to go to previous, set clause index to previous (if possible)
+        elif previous_clause:
+            if state.current_clause_index > 0:
+                await self.set_clause_index(session_id, state.current_clause_index - 1)
+                state = self.sessions[session_id]
+
         state.agent_response = response_text
         state.updated_at = datetime.utcnow()
         
@@ -123,6 +134,7 @@ User Message: {query}
         return {
             "response": response_text,
             "advance_clause": advance_clause,
+            "previous_clause": previous_clause,
             "current_clause": state.current_clause,
             "status": state.status.value
         }
@@ -256,6 +268,25 @@ User Message: {query}
         
         state.document_analysis[state.current_clause_index] = [analysis]
         state.updated_at = datetime.utcnow()
+
+        # Store document upload in MongoDB with clause and answer
+        # Try to get the answer for the current clause, or the previous clause if just advanced
+        user_answer = None
+        if state.user_answers.get(state.current_clause_index) is not None:
+            user_answer = state.user_answers[state.current_clause_index]
+        elif state.user_answers.get(state.current_clause_index - 1) is not None and state.current_clause_index > 0:
+            user_answer = state.user_answers[state.current_clause_index - 1]
+        doc_to_insert = {
+            "session_id": session_id,
+            "clause_index": state.current_clause_index,
+            "clause": state.current_clause["question"] if state.current_clause else None,
+            "document_key": document_key,
+            "analysis_summary": analysis_summary,
+            "answer": user_answer,
+            "uploaded_at": datetime.utcnow()
+        }
+        print(f"[DEBUG] Inserting document into db.documents: {doc_to_insert}")
+        await db.documents.insert_one(doc_to_insert)
         
         return {
             "success": True,
@@ -299,6 +330,20 @@ User Message: {query}
             "final_report": f"Audit completed with {compliance_score}% compliance score.",
             "generated_at": datetime.utcnow().isoformat()
         }
+
+    async def set_clause_index(self, session_id: str, index: int) -> dict:
+        """Set the current clause index for navigation (e.g., previous/next clause)"""
+        if session_id not in self.sessions:
+            raise ValueError("Session not found")
+        if not (0 <= index < len(CLAUSE_METADATA)):
+            raise ValueError("Invalid clause index")
+        state = self.sessions[session_id]
+        state.current_clause_index = index
+        state.current_clause = CLAUSE_METADATA[index]
+        # Optionally update MongoDB as well
+        await db.sessions.update_one({"_id": session_id}, {"$set": {"clause_index": index}})
+        state.updated_at = datetime.utcnow()
+        return {"current_clause_index": state.current_clause_index}
 
 
 # Global instance

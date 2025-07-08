@@ -299,6 +299,58 @@
             margin: 10px 0;
         }
 
+        .answers-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+        }
+        .answers-section h3 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .answer-item {
+            background: #fff;
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 4px rgba(44,62,80,0.06);
+        }
+        .answer-label {
+            font-weight: bold;
+            color: #2980b9;
+        }
+        .doc-list {
+            margin-top: 8px;
+        }
+        .doc-link {
+            color: #27ae60;
+            text-decoration: underline;
+            margin-right: 10px;
+        }
+
+        .clause-nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .clause-nav button {
+            padding: 8px 18px;
+            border-radius: 6px;
+            border: none;
+            font-weight: bold;
+            background: #34495e;
+            color: #fff;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .clause-nav button:disabled {
+            background: #bdc3c7;
+            color: #fff;
+            cursor: not-allowed;
+        }
+
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -388,26 +440,22 @@
 
         <div class="main-content">
             <div class="clause-section">
+                <div class="clause-nav">
+                    <button id="prevClauseBtn" onclick="goToPrevClause()">⬅ Previous</button>
+                    <button id="nextClauseBtn" onclick="goToNextClause()">Next ➡</button>
+                </div>
                 <h2>📋 Current Clause</h2>
                 <div class="clause-info">
                     <div class="clause-number" id="clauseNumber">Loading...</div>
                     <div class="clause-question" id="clauseQuestion">Loading...</div>
                     <div class="clause-description" id="clauseDescription">Loading...</div>
                 </div>
-                
-                <div class="upload-section">
-                    <h3>📄 Upload Document</h3>
-                    <div class="file-upload" onclick="document.getElementById('fileInput').click()">
-                        <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.txt" onchange="handleFileSelect(event)">
-                        <p>📁 Click to select a document</p>
-                        <p style="font-size: 0.9em; color: #7f8c8d;">Supports: PDF, DOC, DOCX, TXT</p>
-                    </div>
-                    <button class="upload-btn" id="uploadBtn" onclick="uploadDocument()" disabled>
-                        Upload Document
-                    </button>
+                <!-- Removed upload-section -->
+                <div class="answers-section" id="answersSection">
+                    <h3>📝 Recorded Answers & Documents</h3>
+                    <div id="answersList">Loading...</div>
                 </div>
             </div>
-
             <div class="chat-section">
                 <h2>💬 Chat with Agent</h2>
                 <div class="chat-messages" id="chatMessages">
@@ -415,19 +463,16 @@
                         Hello! I'm your ISO 27001 audit assistant. Ask me anything about the current clause or upload a document for analysis.
                     </div>
                 </div>
-                
                 <div class="chat-input">
                     <input type="text" id="chatInput" placeholder="Ask a question about the current clause..." onkeypress="handleKeyPress(event)">
                     <button onclick="sendMessage()">Send</button>
                 </div>
-                
                 <div class="loading" id="loading">
                     <div class="spinner"></div>
                     <p>Processing...</p>
                 </div>
             </div>
         </div>
-
         <div class="status-bar">
             <div>Session: <span id="sessionId">Not started</span></div>
             <div>Status: <span id="status">Ready</span></div>
@@ -510,6 +555,43 @@
                 }
             } catch (error) {
                 console.error('Error updating status:', error);
+            }
+        }
+
+        // Add function to fetch and display answers and documents for the current clause
+        async function updateAnswersSection() {
+            const answersList = document.getElementById('answersList');
+            answersList.innerHTML = 'Loading...';
+            try {
+                // Fetch audit status to get answers and uploaded documents
+                const response = await fetch(`/agent/${currentSessionId}/status`);
+                if (!response.ok) throw new Error('Failed to get status');
+                const status = await response.json();
+                const clauseIdx = status.current_clause_index;
+                let html = '';
+                // Show recorded answer for this clause
+                if (status.user_answers && status.user_answers[clauseIdx]) {
+                    html += `<div class='answer-item'><span class='answer-label'>Answer:</span> ${status.user_answers[clauseIdx]}</div>`;
+                } else {
+                    html += `<div class='answer-item'><span class='answer-label'>Answer:</span> <em>No answer recorded yet.</em></div>`;
+                }
+                // Show uploaded documents for this clause
+                let docs = [];
+                if (status.document_analysis && status.document_analysis[clauseIdx]) {
+                    docs = status.document_analysis[clauseIdx].map(a => a.document_key);
+                }
+                if (docs.length > 0) {
+                    html += `<div class='answer-item'><span class='answer-label'>Documents:</span><div class='doc-list'>`;
+                    docs.forEach(docKey => {
+                        html += `<span class='doc-link'>${docKey}</span>`;
+                    });
+                    html += `</div></div>`;
+                } else {
+                    html += `<div class='answer-item'><span class='answer-label'>Documents:</span> <em>No documents uploaded yet.</em></div>`;
+                }
+                answersList.innerHTML = html;
+            } catch (e) {
+                answersList.innerHTML = '<em>Could not load answers or documents.</em>';
             }
         }
 
@@ -644,9 +726,22 @@
                 if (data.advance_clause) {
                     addMessage('➡️ Moved to the next clause.', 'agent');
                     await updateStatus();
+                    await updateAnswersSection();
+                } else if (data.previous_clause) {
+                    addMessage('⬅️ Moved to the previous clause.', 'agent');
+                    // Call backend to move to previous clause
+                    const prevResponse = await fetch(`/agent/${currentSessionId}/set-clause`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ index: currentClauseIndex - 1 })
+                    });
+                    if (!prevResponse.ok) throw new Error('Failed to move to previous clause');
+                    await updateStatus();
+                    await updateAnswersSection();
                 } else {
                     // Update status after message
                     await updateStatus();
+                    await updateAnswersSection();
                 }
             } catch (error) {
                 console.error('Error sending message:', error);
@@ -781,6 +876,44 @@
             setTimeout(() => {
                 successDiv.remove();
             }, 5000);
+        }
+
+        async function goToNextClause() {
+            if (!currentSessionId) return;
+            try {
+                showLoading(true);
+                // Record a skip answer to advance
+                const response = await fetch(`/agent/${currentSessionId}/answer`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ answer: '__skip__' })
+                });
+                if (!response.ok) throw new Error('Failed to move to next clause');
+                await updateStatus();
+                await updateAnswersSection();
+            } catch (e) {
+                addMessage('❌ Could not move to the next clause.', 'agent');
+            } finally {
+                showLoading(false);
+            }
+        }
+        async function goToPrevClause() {
+            if (!currentSessionId || currentClauseIndex === 0) return;
+            try {
+                showLoading(true);
+                const response = await fetch(`/agent/${currentSessionId}/set-clause`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ index: currentClauseIndex - 1 })
+                });
+                if (!response.ok) throw new Error('Failed to move to previous clause');
+                await updateStatus();
+                await updateAnswersSection();
+            } catch (e) {
+                addMessage('❌ Could not move to the previous clause.', 'agent');
+            } finally {
+                showLoading(false);
+            }
         }
 
         // Initialize app when page loads

@@ -1,7 +1,7 @@
 # app/routes/agent.py
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body
 
 from app.models.audit import (
     StartAuditResponse,
@@ -115,4 +115,18 @@ async def complete_agent_audit(session_id: str):
         # For now, just return success
         return {"success": True, "message": "Audit completion triggered"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to complete audit: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Failed to complete audit: {str(e)}")
+
+
+@router.post("/{session_id}/set-clause", status_code=200)
+async def set_clause_index(session_id: str, index: int = Body(..., embed=True)):
+    """
+    Set the current clause index for the session (for navigation).
+    """
+    try:
+        result = await simple_audit_graph.set_clause_index(session_id, index)
+        return {"success": True, "current_clause_index": result["current_clause_index"]}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to set clause index: {str(e)}") 
