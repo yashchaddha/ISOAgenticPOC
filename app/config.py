@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     mongodb_uri: str
     s3_bucket: str
     aws_region: str = "ap-east-1"
+    openai_api_key: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

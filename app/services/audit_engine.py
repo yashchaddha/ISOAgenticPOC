@@ -61,6 +61,32 @@ CLAUSE_METADATA = [
             "Resource provision"
         ],
     },
+    {
+        "question": "Clause 5.2: How is leadership demonstrating commitment?",
+        "description": (
+            "Top management must demonstrate leadership and commitment by being "
+            "accountable for the effectiveness of the ISMS, establishing policy, "
+            "assigning roles, and promoting continual improvement."
+        ),
+        "attributes": [
+            "Information security policy",
+            "Roles & responsibilities",
+            "Resource provision"
+        ],
+    },
+    {
+        "question": "Clause 5.3: How is leadership demonstrating commitment?",
+        "description": (
+            "Top management must demonstrate leadership and commitment by being "
+            "accountable for the effectiveness of the ISMS, establishing policy, "
+            "assigning roles, and promoting continual improvement."
+        ),
+        "attributes": [
+            "Information security policy",
+            "Roles & responsibilities",
+            "Resource provision"
+        ],
+    },
     # …add remaining clause entries as needed…
 ]
 
@@ -68,7 +94,7 @@ CLAUSE_METADATA = [
 # AuditEngine: session, next clause, record answer, handle query
 # -----------------------------------------------------------------------------
 class AuditEngine:
-    @staticmethod
+    
     async def create_session() -> str:
         """
         Initialize a new audit session in MongoDB.
@@ -134,7 +160,7 @@ class AuditEngine:
         if not meta:
             return "Audit complete. No active clause."
 
-        system_prompt = "You are an expert ISO 27001 internal auditor. If the query is not related to the ISO 27001, politely tell the user that you can only answer questions related to ISO 27001 clauses."
+        system_prompt = "You are an expert ISO 27001 internal auditor. If the query is not related to the ISO 27001, politely tell the user that you can only answer questions related to ISO 27001 clauses. At the end of each answer, ask the user if they want to submit documents related to the clause or record their answer for it"
         user_prompt = (
             f"Clause description: {meta['description']}\n"
             f"Attributes: {', '.join(meta['attributes'])}\n"
@@ -149,7 +175,7 @@ class AuditEngine:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=150,
+            max_tokens=2000,
             temperature=0
         )
 

@@ -4,8 +4,11 @@ import logging
 from app.services.mongo_client import db
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from app.routes.upload import router as upload_router
 from app.routes.audit import router as audit_router
+from app.routes.agent import router as agent_router
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -18,6 +21,8 @@ logging.getLogger("uvicorn").info(f"🐘 Loaded settings: {settings.dict()!r}")
 
 origins = [
     "http://localhost:3000",   # React dev server
+    "http://localhost:8000",   # FastAPI server
+    "http://127.0.0.1:8000",   # FastAPI server alternative
     # add any other domains (e.g. your production URL) here
 ]
 
@@ -31,10 +36,18 @@ app.add_middleware(
 
 app.include_router(upload_router, prefix="/upload", tags=["upload"])
 app.include_router(audit_router)
+app.include_router(agent_router)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 @app.get("/")
 async def root():
-    return {"message": "API is up and running!"}
+    return FileResponse("app/static/index.html")
+
+@app.get("/ui")
+async def ui():
+    return FileResponse("app/static/index.html")
 
 @app.get("/health/db")
 async def db_health_check():

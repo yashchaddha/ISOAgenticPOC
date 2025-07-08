@@ -21,3 +21,17 @@ def create_presigned_url(key: str, expires_in: int = 3600) -> str:
         ExpiresIn=expires_in,
         HttpMethod="PUT"     # explicitly generate a PUT URL
     )
+
+
+async def upload_file_to_s3(file_content: bytes, key: str) -> bool:
+    """Upload file content directly to S3"""
+    try:
+        s3.put_object(
+            Bucket=settings.s3_bucket,
+            Key=key,
+            Body=file_content
+        )
+        return True
+    except Exception as e:
+        print(f"Error uploading to S3: {e}")
+        return False

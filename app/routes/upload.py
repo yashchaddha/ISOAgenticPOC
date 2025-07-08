@@ -1,9 +1,9 @@
 # app/routes/upload.py
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from datetime import datetime
-from app.services.s3_client import create_presigned_url
+from app.services.s3_client import create_presigned_url, upload_file_to_s3
 from app.services.mongo_client import db
 from typing import List
 
@@ -76,3 +76,40 @@ async def list_uploads():
         )
         for d in docs
     ]
+
+
+# ─── Direct Upload Endpoint ──────────────────────────────────
+
+@router.post("/file", response_model=UploadCompleteResponse)
+async def upload_file(file: UploadFile = File(...)):
+    """
+    Upload a file directly through the backend to avoid CORS issues.
+    """
+    try:
+        # Read file content
+        file_content = await file.read()
+        
+        # Generate a unique key for the file
+        import uuid
+        file_extension = file.filename.split('.')[-1] if '.' in file.filename else ''
+        key = f"{uuid.uuid4()}.{file_extension}" if file_extension else str(uuid.uuid4())
+        
+        # Upload to S3
+        success = await upload_file_to_s3(file_content, key)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to upload file to S3")
+        
+        # Record in MongoDB
+        recorded_time = datetime.utcnow()
+        doc = {
+            "key": key,
+            "filename": file.filename,
+            "recorded_at": recorded_time
+        }
+        
+        await db.uploads.insert_one(doc)
+        
+        return UploadCompleteResponse(**doc)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
