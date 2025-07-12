@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     s3_bucket: str
     aws_region: str = "ap-east-1"
     openai_api_key: str = ""
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
